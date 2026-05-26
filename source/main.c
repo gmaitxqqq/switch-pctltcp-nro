@@ -73,37 +73,40 @@ static void waitForKey(void)
 }
 
 // ---- Get Switch IP Address ----
-// nifm must be initialized before calling this
-// Call this every frame — it re-tries nifmGetCurrentIpAddress()
-// if nifm was not initialized yet.
+// Tries multiple methods: nifm -> gethostid() -> fallback
 static void getIpAddressStr(char *buf, size_t buf_size)
 {
     buf[0] = '\0';
 
-    /* If nifm was not initialized at startup, try once now */
+    /* Method 1: nifm (most reliable when connected) */
     static bool s_nifm_tried = false;
-    static Result s_nifm_rc = MAKERESULT(Module_Libnx, LibnxError_NotFound);
-
     if (!s_nifm_tried) {
-        s_nifm_rc = nifmInitialize(NifmServiceType_User);
+        nifmInitialize(NifmServiceType_User);
         s_nifm_tried = true;
-    }
-
-    if (R_FAILED(s_nifm_rc)) {
-        snprintf(buf, buf_size, "N/A");
-        return;
     }
 
     u32 ip = 0;
     Result rc = nifmGetCurrentIpAddress(&ip);
-    if (R_FAILED(rc)) {
-        snprintf(buf, buf_size, "N/A");
+    if (R_SUCCEEDED(rc) && ip != 0) {
+        struct in_addr addr;
+        addr.s_addr = ip;
+        snprintf(buf, buf_size, "%s", inet_ntoa(addr));
         return;
     }
 
-    struct in_addr addr;
-    addr.s_addr = ip;
-    snprintf(buf, buf_size, "%s", inet_ntoa(addr));
+    /* Method 2: gethostid() — returns local IP in network byte order */
+    long hostid = gethostid();
+    if (hostid != 0 && hostid != -1) {
+        struct in_addr addr;
+        addr.s_addr = (u32)hostid;
+        /* Sanity check: not loopback */
+        if ((addr.s_addr & 0xFF) != 127) {
+            snprintf(buf, buf_size, "%s", inet_ntoa(addr));
+            return;
+        }
+    }
+
+    snprintf(buf, buf_size, "N/A");
 }
 
 // ---- Menu Screens ----
@@ -474,6 +477,10 @@ int main(int argc, char **argv)
     printf("   Network: %s\n", R_SUCCEEDED(nifm_rc) ? "OK" : "N/A");
     consoleFlush();
 
+    // Also try to get IP early for display
+    char ip_early[64];
+    getIpAddressStr(ip_early, sizeof(ip_early));
+
     // Start TCP server
     Result tcp_rc = tcp_server_start();
     if (R_FAILED(tcp_rc)) {
@@ -488,9 +495,19 @@ int main(int argc, char **argv)
     printf("   TCP server:   OK (port %d)\n", TCP_PORT);
     consoleFlush();
 
-    // Get and display IP
+    // Display IP (prefer nifm, fallback to tcp_server bound addr)
     char ip_str[64];
-    getIpAddressStr(ip_str, sizeof(ip_str));
+    if (ip_early[0] && strcmp(ip_early, "N/A") != 0) {
+        strncpy(ip_str, ip_early, sizeof(ip_str) - 1);
+        ip_str[sizeof(ip_str) - 1] = '\0';
+    } else {
+        getIpAddressStr(ip_str, sizeof(ip_str));
+        if (strcmp(ip_str, "N/A") == 0) {
+            /* Fallback: use the address TCP server bound to */
+            strncpy(ip_str, tcp_server_get_ip(), sizeof(ip_str) - 1);
+            ip_str[sizeof(ip_str) - 1] = '\0';
+        }
+    }
     printf("   IP Address:   %s\n", ip_str);
     consoleFlush();
 
@@ -523,8 +540,11 @@ int main(int argc, char **argv)
         printSeparator();
 
         /* Refresh IP every frame (in case network comes up late) */
-        if (R_SUCCEEDED(nifm_rc))
-            getIpAddressStr(ip_str, sizeof(ip_str));
+        getIpAddressStr(ip_str, sizeof(ip_str));
+        if (strcmp(ip_str, "N/A") == 0) {
+            strncpy(ip_str, tcp_server_get_ip(), sizeof(ip_str) - 1);
+            ip_str[sizeof(ip_str) - 1] = '\0';
+        }
 
         printf("   Switch Parental Control TCP\n");
         printf("   %s | %s:%d | Clients: %u\n",
