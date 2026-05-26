@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SWPC 客户端 v1.3.3 - Nintendo Switch 游戏时间 TCP 远程管理 (NRO 版)
+SWPC 客户端 v1.3.4 - Nintendo Switch 游戏时间 TCP 远程管理 (NRO 版)
 ====================================================================
 通过 TCP（端口 6000）连接到 Switch，远程管理家长控制的游戏时间限制。
 
@@ -18,14 +18,14 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-VERSION = "1.3.3"
+VERSION = "1.3.4"
 
 # ---------------------------------------------------------------------------
 # 协议常量
 # ---------------------------------------------------------------------------
 DEFAULT_PORT = 6000
-TIMEOUT_CONNECT = 5.0
-TIMEOUT_COMMAND = 3.0
+TIMEOUT_CONNECT = 8.0
+TIMEOUT_COMMAND = 5.0
 
 # Switch 星期映射: 0=周日, 1=周一, ..., 6=周六
 SWITCH_DAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
@@ -88,17 +88,20 @@ class SwitchTCPClient:
             self._sock.connect((host, port))
             self._sock.settimeout(TIMEOUT_COMMAND)
 
-            # 尝试读取 HELLO（1秒超时），没有也无所谓
+            # 尝试读取 HELLO（2秒超时），没有也无所谓
             try:
-                self._sock.settimeout(1.0)
+                self._sock.settimeout(2.0)
                 hello = self._sock.recv(1024).decode("utf-8", errors="replace")
+                print(f"[DEBUG] HELLO: {hello.strip()}")
             except socket.timeout:
-                hello = ""
+                pass  # 没有 HELLO，继续
+
+            self._sock.settimeout(TIMEOUT_COMMAND)
 
             # 发 PING，等 PONG
-            self._sock.settimeout(TIMEOUT_COMMAND)
             self._sock.sendall(b"PING\n")
             reply = self._sock.recv(1024).decode("utf-8", errors="replace")
+            print(f"[DEBUG] PING reply: {reply.strip()}")
 
             if "PONG" not in reply:
                 self.disconnect()
@@ -136,21 +139,26 @@ class SwitchTCPClient:
                 raise ConnectionError("未连接")
             self._sock.settimeout(TIMEOUT_COMMAND)
             self._sock.sendall((cmd + "\n").encode("utf-8"))
-            data = self._sock.recv(1024)
+            data = self._sock.recv(4096)
             return data.decode("utf-8", errors="replace")
 
     def get_status(self) -> SwitchStatus:
         """获取完整的游戏计时器状态"""
         reply = self._send_cmd("STATUS")
+        print(f"[DEBUG] STATUS reply: {reply.strip()}")
         return SwitchStatus.from_response(reply)
 
     def set_limit(self, minutes: int) -> str:
         """设置全部 7 天统一的每日限额。返回响应字符串"""
-        return self._send_cmd(f"SET {minutes}")
+        reply = self._send_cmd(f"SET {minutes}")
+        print(f"[DEBUG] SET reply: {reply.strip()}")
+        return reply
 
     def set_day_limit(self, day: int, minutes: int) -> str:
         """设置指定某天的限额。day: 0=周日..6=周六。返回响应字符串"""
-        return self._send_cmd(f"SET_DAY {day} {minutes}")
+        reply = self._send_cmd(f"SET_DAY {day} {minutes}")
+        print(f"[DEBUG] SET_DAY reply: {reply.strip()}")
+        return reply
 
     def start_timer(self) -> str:
         """启动游戏计时器（开始累计时间）"""
@@ -174,7 +182,7 @@ class SWPCApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(f"SWPC v{VERSION} - Switch 远程管理 (NRO)")
-        self.root.geometry("560x620")
+        self.root.geometry("560x650")
         self.root.resizable(True, True)
 
         self.client = SwitchTCPClient()
@@ -242,7 +250,7 @@ class SWPCApp:
 
         ttk.Separator(set_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=4)
 
-        # ---- 第2行：每日设置（下拉框选星期） ----
+        # ---- 第2行：每日设置（下拉框选星期）----
         row2 = ttk.Frame(set_frame)
         row2.pack(fill=tk.X, pady=2)
 
@@ -290,7 +298,6 @@ class SWPCApp:
         ctrl_frame = ttk.LabelFrame(main, text="计时控制", padding=8)
         ctrl_frame.pack(fill=tk.X, **pad)
 
-        # 说明文字
         hint = ttk.Label(ctrl_frame,
                           text="控制 Switch 端计时器的运行状态（非开关整个家长控制功能）",
                           foreground="gray")
@@ -348,11 +355,11 @@ class SWPCApp:
         refresh_frame.pack(fill=tk.X, pady=(5, 0))
         self.auto_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(refresh_frame, text="自动刷新（每10秒）",
-                         variable=self.auto_var, command=self._on_auto_toggle).pack(side=tk.LEFT)
+                         variable=self.auto_var, command=self._on_auto_toggle).pack(side="left")
 
         self.refresh_btn = ttk.Button(refresh_frame, text="立即刷新",
                                        command=self._on_refresh)
-        self.refresh_btn.pack(side=tk.RIGHT)
+        self.refresh_btn.pack(side="right")
 
         # ================================================================
         # 日志区域
@@ -372,7 +379,7 @@ class SWPCApp:
     # ---- 事件处理 ----
 
     def _on_connect(self):
-        """处理连接/断开按钮 —— 用 after 分段，不卡 UI"""
+        """处理连接/断开按钮"""
         if self.client.is_connected:
             self.client.disconnect()
             self._stop_polling()
@@ -385,20 +392,15 @@ class SWPCApp:
         self.conn_btn.configure(state=tk.DISABLED, text="连接中...")
         self.root.update_idletasks()
 
-        # 用 after 延迟 100ms 执行 connect，让 UI 先刷新
+        # 用 after 延迟执行 connect，让 UI 先刷新
         self.root.after(100, lambda: self._do_connect(ip))
 
     def _do_connect(self, ip):
-        """真正执行 connect（在 after 回调里，UI 已刷新）"""
-        import sys
-        print(f"[DEBUG] _do_connect 被调用，ip={ip}", flush=True)
-        sys.stdout.flush()
+        """真正执行 connect（在 after 回调里）"""
         try:
             err = self.client.connect(ip)
-            print(f"[DEBUG] connect 返回: '{err}'", flush=True)
         except Exception as e:
             err = f"异常: {type(e).__name__}: {e}"
-            # 写详细错误到桌面日志
             try:
                 with open(r"C:\Users\HaiXin_LK7\Desktop\connect_detail.log", "a", encoding="utf-8") as f:
                     f.write(time.strftime("%H:%M:%S ") + err + "\n")
