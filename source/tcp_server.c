@@ -30,6 +30,7 @@ static int            s_server_fd   = -1;
 static bool           s_running     = false;
 static pthread_t      s_thread;
 static atomic_uint    s_client_count = 0;
+static char           s_bound_ip[64] = "0.0.0.0";
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -296,6 +297,13 @@ Result tcp_server_start(void)
         return MAKERESULT(Module_Libnx, LibnxError_IoError);
     }
 
+    /* Record the bound address for IP display */
+    struct sockaddr_in bound_addr;
+    socklen_t bound_len = sizeof(bound_addr);
+    if (getsockname(s_server_fd, (struct sockaddr *)&bound_addr, &bound_len) == 0) {
+        snprintf(s_bound_ip, sizeof(s_bound_ip), "%s", inet_ntoa(bound_addr.sin_addr));
+    }
+
     s_running = true;
 
     /* Launch accept thread */
@@ -332,4 +340,9 @@ bool tcp_server_is_running(void)
 u32 tcp_server_client_count(void)
 {
     return atomic_load(&s_client_count);
+}
+
+const char *tcp_server_get_ip(void)
+{
+    return s_bound_ip;
 }
