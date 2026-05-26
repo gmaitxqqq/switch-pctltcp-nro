@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """
-SWPC 客户端 - Nintendo Switch 游戏时间 TCP 远程管理 (NRO 版)
-=============================================================
-
-通过 TCP（端口 6000）连接到 Switch，远程管理家长控制的
-游戏时间限制。
+SWPC 客户端 v1.3.4 - Nintendo Switch 游戏时间 TCP 远程管理 (NRO 版)
+====================================================================
+通过 TCP（端口 6000）连接到 Switch，远程管理家长控制的游戏时间限制。
 
 运行要求：Python 3.7+（仅标准库，无需 pip 安装）
 Switch 端：需运行 pctltcp-nro.nro（Homebrew Menu 启动）
@@ -12,19 +10,22 @@ Switch 端：需运行 pctltcp-nro.nro（Homebrew Menu 启动）
 
 import socket
 import threading
+import time
+import traceback
+from dataclasses import dataclass
+from datetime import datetime
+
 import tkinter as tk
 from tkinter import ttk, messagebox
-import time
-import re
-from datetime import datetime
-from dataclasses import dataclass
+
+VERSION = "1.3.4"
 
 # ---------------------------------------------------------------------------
 # 协议常量
 # ---------------------------------------------------------------------------
 DEFAULT_PORT = 6000
-TIMEOUT_CONNECT = 5.0
-TIMEOUT_COMMAND = 3.0
+TIMEOUT_CONNECT = 8.0
+TIMEOUT_COMMAND = 5.0
 
 # Switch 星期映射: 0=周日, 1=周一, ..., 6=周六
 SWITCH_DAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
@@ -52,6 +53,7 @@ class SwitchStatus:
     @staticmethod
     def from_response(line: str) -> "SwitchStatus":
         """解析 STATUS 响应行"""
+        import re
         m = re.match(
             r"STATUS\s+(enabled|disabled)\s+(\d+)\s+(\d+)\s+(restricted|free)",
             line.strip(),
@@ -71,10 +73,10 @@ class SwitchStatus:
 # TCP 客户端
 # ---------------------------------------------------------------------------
 class SwitchTCPClient:
-    """管理与 Switch 上 sys-pctltcp 系统模块的 TCP 连接"""
+    """管理与 Switch 上 pctltcp-nro 的 TCP 连接"""
 
     def __init__(self):
-        self._sock: socket.socket | None = None
+        self._sock = None
         self._lock = threading.Lock()
 
     def connect(self, host: str, port: int = DEFAULT_PORT) -> str:
@@ -84,19 +86,35 @@ class SwitchTCPClient:
             self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._sock.settimeout(TIMEOUT_CONNECT)
             self._sock.connect((host, port))
-            reply = self._send_cmd("PING")
+            self._sock.settimeout(TIMEOUT_COMMAND)
+
+            # 尝试读取 HELLO（2秒超时），没有也无所谓
+            try:
+                self._sock.settimeout(2.0)
+                hello = self._sock.recv(1024).decode("utf-8", errors="replace")
+                print(f"[DEBUG] HELLO: {hello.strip()}")
+            except socket.timeout:
+                pass  # 没有 HELLO，继续
+
+            self._sock.settimeout(TIMEOUT_COMMAND)
+
+            # 发 PING，等 PONG
+            self._sock.sendall(b"PING\n")
+            reply = self._sock.recv(1024).decode("utf-8", errors="replace")
+            print(f"[DEBUG] PING reply: {reply.strip()}")
+
             if "PONG" not in reply:
                 self.disconnect()
-                return f"意外的响应: {reply.strip()}"
+                return f"协议错误: 收到 '{reply.strip()}'，期望 'PONG'"
             return ""
         except socket.timeout:
-            self._sock = None
-            return f"连接超时（{TIMEOUT_CONNECT}秒）。Switch 是否运行 pctltcp-nro 且在同一网络？"
+            self.disconnect()
+            return f"连接超时({TIMEOUT_CONNECT}秒)。请检查 IP 是否正确，是否与 PC 在同一网络。"
         except ConnectionRefusedError:
-            self._sock = None
-            return "连接被拒绝。请检查 pctltcp-nro 是否在 Switch 上运行。"
+            self.disconnect()
+            return "连接被拒绝。pctltcp-nro 是否在 Switch 上运行？"
         except OSError as e:
-            self._sock = None
+            self.disconnect()
             return f"网络错误: {e}"
 
     def disconnect(self):
@@ -107,7 +125,8 @@ class SwitchTCPClient:
                     self._sock.close()
                 except OSError:
                     pass
-                self._sock = None
+                finally:
+                    self._sock = None
 
     @property
     def is_connected(self) -> bool:
@@ -120,21 +139,26 @@ class SwitchTCPClient:
                 raise ConnectionError("未连接")
             self._sock.settimeout(TIMEOUT_COMMAND)
             self._sock.sendall((cmd + "\n").encode("utf-8"))
-            data = self._sock.recv(1024)
+            data = self._sock.recv(4096)
             return data.decode("utf-8", errors="replace")
 
     def get_status(self) -> SwitchStatus:
         """获取完整的游戏计时器状态"""
         reply = self._send_cmd("STATUS")
+        print(f"[DEBUG] STATUS reply: {reply.strip()}")
         return SwitchStatus.from_response(reply)
 
     def set_limit(self, minutes: int) -> str:
         """设置全部 7 天统一的每日限额。返回响应字符串"""
-        return self._send_cmd(f"SET {minutes}")
+        reply = self._send_cmd(f"SET {minutes}")
+        print(f"[DEBUG] SET reply: {reply.strip()}")
+        return reply
 
     def set_day_limit(self, day: int, minutes: int) -> str:
         """设置指定某天的限额。day: 0=周日..6=周六。返回响应字符串"""
-        return self._send_cmd(f"SET_DAY {day} {minutes}")
+        reply = self._send_cmd(f"SET_DAY {day} {minutes}")
+        print(f"[DEBUG] SET_DAY reply: {reply.strip()}")
+        return reply
 
     def start_timer(self) -> str:
         """启动游戏计时器（开始累计时间）"""
@@ -157,14 +181,13 @@ class SWPCApp:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("SWPC - Switch 远程管理 (NRO)")
-        self.root.geometry("560x620")
-        self.root.minsize(500, 580)
+        self.root.title(f"SWPC v{VERSION} - Switch 远程管理 (NRO)")
+        self.root.geometry("560x650")
         self.root.resizable(True, True)
 
         self.client = SwitchTCPClient()
         self._polling = False
-        self._poll_thread: threading.Thread | None = None
+        self._poll_thread = None
         self._stop_event = threading.Event()
 
         self._build_ui()
@@ -175,7 +198,6 @@ class SWPCApp:
     def _build_ui(self):
         """构建所有 GUI 组件"""
         pad = {"padx": 12, "pady": 4}
-        section_pad = {"padx": 12, "pady": (10, 2)}
 
         main = ttk.Frame(self.root, padding=10)
         main.pack(fill=tk.BOTH, expand=True)
@@ -187,7 +209,7 @@ class SWPCApp:
         conn_frame.pack(fill=tk.X, **pad)
 
         ttk.Label(conn_frame, text="Switch IP：").grid(row=0, column=0, sticky=tk.W)
-        self.ip_var = tk.StringVar(value="192.168.1.")
+        self.ip_var = tk.StringVar(value="192.168.31.143")
         ip_entry = ttk.Entry(conn_frame, textvariable=self.ip_var, width=18)
         ip_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
 
@@ -228,7 +250,7 @@ class SWPCApp:
 
         ttk.Separator(set_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=4)
 
-        # ---- 第2行：每日设置（下拉框选星期） ----
+        # ---- 第2行：每日设置（下拉框选星期）----
         row2 = ttk.Frame(set_frame)
         row2.pack(fill=tk.X, pady=2)
 
@@ -276,7 +298,6 @@ class SWPCApp:
         ctrl_frame = ttk.LabelFrame(main, text="计时控制", padding=8)
         ctrl_frame.pack(fill=tk.X, **pad)
 
-        # 说明文字
         hint = ttk.Label(ctrl_frame,
                           text="控制 Switch 端计时器的运行状态（非开关整个家长控制功能）",
                           foreground="gray")
@@ -334,11 +355,11 @@ class SWPCApp:
         refresh_frame.pack(fill=tk.X, pady=(5, 0))
         self.auto_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(refresh_frame, text="自动刷新（每10秒）",
-                         variable=self.auto_var, command=self._on_auto_toggle).pack(side=tk.LEFT)
+                         variable=self.auto_var, command=self._on_auto_toggle).pack(side="left")
 
         self.refresh_btn = ttk.Button(refresh_frame, text="立即刷新",
                                        command=self._on_refresh)
-        self.refresh_btn.pack(side=tk.RIGHT)
+        self.refresh_btn.pack(side="right")
 
         # ================================================================
         # 日志区域
@@ -369,25 +390,56 @@ class SWPCApp:
         ip = self.ip_var.get().strip()
         self._log(f"正在连接 {ip}:{DEFAULT_PORT}...")
         self.conn_btn.configure(state=tk.DISABLED, text="连接中...")
-        self.root.update()
+        self.root.update_idletasks()
 
-        def connect_thread():
+        # 用 after 延迟执行 connect，让 UI 先刷新
+        self.root.after(100, lambda: self._do_connect(ip))
+
+    def _do_connect(self, ip):
+        """真正执行 connect（在 after 回调里）"""
+        try:
             err = self.client.connect(ip)
-            self.root.after(0, lambda: self._on_connect_result(err))
+        except Exception as e:
+            err = f"异常: {type(e).__name__}: {e}"
+            try:
+                with open(r"C:\Users\HaiXin_LK7\Desktop\connect_detail.log", "a", encoding="utf-8") as f:
+                    f.write(time.strftime("%H:%M:%S ") + err + "\n")
+                    f.write(traceback.format_exc() + "\n")
+            except Exception:
+                pass
 
-        threading.Thread(target=connect_thread, daemon=True).start()
-
-    def _on_connect_result(self, err: str):
-        """连接线程完成后的回调"""
         if err:
             self._log(f"错误: {err}")
-            self.conn_btn.configure(state=tk.NORMAL, text="连接")
+            self.client.disconnect()
+            self.conn_btn.configure(text="连接", state=tk.NORMAL)
+            self.conn_label.configure(text="未连接", foreground="gray")
         else:
-            self._log(f"已连接到 {self.ip_var.get().strip()}！")
+            self._log(f"已连接到 {ip}！")
+            self._update_ui_state()
             self._start_polling()
             self._on_refresh()
 
-    # ---- 三行时间设置 ----
+    def _update_ui_state(self):
+        """根据连接状态更新组件状态"""
+        connected = self.client.is_connected
+        if connected:
+            self.conn_btn.configure(text="断开", state=tk.NORMAL)
+            self.status_led.itemconfig(self._led_circle, fill="#00cc00", outline="#00cc00")
+            self.conn_label.configure(text="已连接", foreground="#006600")
+            state = tk.NORMAL
+        else:
+            self.conn_btn.configure(text="连接", state=tk.NORMAL)
+            self.status_led.itemconfig(self._led_circle, fill="gray", outline="gray")
+            self.conn_label.configure(text="未连接", foreground="gray")
+            state = tk.DISABLED
+
+        self.today_apply_btn.configure(state=state)
+        self.day_apply_btn.configure(state=state)
+        self.all_apply_btn.configure(state=state)
+        self.start_btn.configure(state=state)
+        self.stop_btn.configure(state=state)
+        self.reset_btn.configure(state=state)
+        self.refresh_btn.configure(state=state)
 
     def _on_set_today(self):
         """设置当天限额"""
@@ -505,32 +557,6 @@ class SWPCApp:
         self._stop_polling()
         self._update_ui_state()
         self._clear_status()
-
-    def _update_ui_state(self):
-        """根据连接状态更新组件状态"""
-        connected = self.client.is_connected
-
-        if connected:
-            self.conn_btn.configure(text="断开", state=tk.NORMAL)
-            self.status_led.itemconfig(self._led_circle, fill="#00cc00", outline="#00cc00")
-            self.conn_label.configure(text="已连接", foreground="#006600")
-            state = tk.NORMAL
-        else:
-            self.conn_btn.configure(text="连接", state=tk.NORMAL)
-            self.status_led.itemconfig(self._led_circle, fill="gray", outline="gray")
-            self.conn_label.configure(text="未连接", foreground="gray")
-            state = tk.DISABLED
-
-        # 三行设置按钮
-        self.today_apply_btn.configure(state=state)
-        self.day_apply_btn.configure(state=state)
-        self.all_apply_btn.configure(state=state)
-
-        # 计时控制
-        self.start_btn.configure(state=state)
-        self.stop_btn.configure(state=state)
-        self.reset_btn.configure(state=state)
-        self.refresh_btn.configure(state=state)
 
     def _display_status(self, status: SwitchStatus):
         """用实时数据更新状态面板"""
