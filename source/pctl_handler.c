@@ -140,9 +140,15 @@ Result pctl_get_remaining_time(u64 *remaining_ns)
     Result rc = pctl_reinit();
     if (R_FAILED(rc)) return rc;
 
-    /* serviceDispatchOut: 2nd arg is out var (by pointer), 
-     * the macro fills *remaining_ns from IPC response */
-    return serviceDispatchOut(&s_pctlSrv, 1454, *remaining_ns);
+    /* GetPlayTimerRemainingTime (cmd 1454):
+     * Out: u64 (inline out param).
+     * serviceDispatchOut 3rd arg is an l-value (variable), 
+     * NOT a dereferenced pointer. Use a local tmp. */
+    u64 tmp = 0;
+    rc = serviceDispatchOut(&s_pctlSrv, 1454, tmp);
+    if (R_SUCCEEDED(rc))
+        *remaining_ns = tmp;
+    return rc;
 }
 
 Result pctl_is_restricted(bool *restricted)
@@ -173,10 +179,8 @@ Result pctl_get_settings(PlayTimerSettings *settings)
 
     /* GetPlayTimerSettings (cmd 145601):
      * Output: u16[34] via HIPC pointer buffer.
-     * NOTE: serviceDispatchOut's 3rd arg is for inline out params (raw IPC words).
-     * For pointer-buffer-only output, pass 0 as the out arg and put the
-     * buffer in .buffers[0]. */
-    return serviceDispatchOut(&s_pctlSrv, 145601, 0,
+     * No inline out params — use serviceDispatch() with .buffers[0]. */
+    return serviceDispatch(&s_pctlSrv, 145601,
         .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_Out },
         .buffers = { { settings, sizeof(PlayTimerSettings) } }
     );
@@ -191,11 +195,10 @@ Result pctl_set_settings(const PlayTimerSettings *settings)
 
     /* SetPlayTimerSettingsForDebug (cmd 1951):
      * Input: u16[34] via HIPC pointer buffer.
-     * NOTE: serviceDispatchIn's 3rd arg is for inline input params (raw IPC words).
-     * For pointer-buffer-only input, pass 0 as the inline arg and put the
-     * buffer in .buffers[0]. Previously, *settings was incorrectly passed as
-     * the inline arg, causing IPC parameter errors (0xf601). */
-    return serviceDispatchIn(&s_pctlSrv, 1951, 0,
+     * NOTE: Previously used serviceDispatchIn() with *settings as inline arg,
+     * which is wrong — *settings is the pointer-buffer data, not an inline
+     * IPC word. Use serviceDispatch() (no inline params) with .buffers[]. */
+    return serviceDispatch(&s_pctlSrv, 1951,
         .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_In },
         .buffers = { { settings, sizeof(PlayTimerSettings) } }
     );
