@@ -182,10 +182,13 @@ Result pctl_set_settings(const PlayTimerSettings *settings)
      * Input: u16[34] via HIPC pointer buffer.
      * Based on v11.5 line 204:
      *   serviceDispatchIn(pctlGetServiceSession_Service(), 195101, c)
-     * where c is u16[34]. Pass array name directly. */
-    return serviceDispatchIn(&s_pctlSrv, 195101, settings,
+     * where c is u16[34]. Must use local u16 array. */
+    u16 c[34];
+    memcpy(c, settings->raw, sizeof(c));
+
+    return serviceDispatchIn(&s_pctlSrv, 195101, c,
         .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_In },
-        .buffers      = { { settings, sizeof(PlayTimerSettings) } }
+        .buffers      = { { c, sizeof(c) } }
     );
 }
 
