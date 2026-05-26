@@ -331,8 +331,6 @@ static void menuClearPlayTimer(void)
     while (appletMainLoop()) {
         u64 k = padGetDown();
         if (k & HidNpadButton_A) {
-            u16 d[7];
-            for (int i = 0; i < 7; i++) d[i] = PT_DAY_NOLIMIT;
             Result rc = pctl_set_daily_limit_minutes(0);
             consoleClear();
             printf("\n");

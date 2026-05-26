@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
