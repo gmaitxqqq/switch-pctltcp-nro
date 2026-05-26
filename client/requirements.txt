@@ -1,0 +1,2 @@
+# SWPC Client - PC-side TCP client for Switch Play Timer control
+# No external dependencies beyond Python 3.7+ standard library

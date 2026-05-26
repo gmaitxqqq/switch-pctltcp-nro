@@ -1,0 +1,7 @@
+{
+  "name": "pctltcp-nro",
+  "title_id": "0x0100000000001000",
+  "author": "SWPC",
+  "version": "1.0.0",
+  "description": "Switch Parental Control TCP Server (NRO)"
+}
