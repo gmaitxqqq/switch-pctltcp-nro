@@ -87,8 +87,6 @@ static void getIpAddressStr(char *buf, size_t buf_size)
     if (!s_nifm_tried) {
         s_nifm_rc = nifmInitialize(NifmServiceType_User);
         s_nifm_tried = true;
-        if (R_SUCCEEDED(s_nifm_rc))
-            nifm_rc = s_nifm_rc;  /* update global for cleanup */
     }
 
     if (R_FAILED(s_nifm_rc)) {
