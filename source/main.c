@@ -80,7 +80,9 @@ static void getIpAddressStr(char *buf, size_t buf_size)
     buf[0] = '\0';
 
     /* Method 1: tcp_server_get_ip() — most reliable (getsockname) */
-    if (tcp_server_get_ip(buf, buf_size) && buf[0] != '\0') {
+    const char *ip = tcp_server_get_ip();
+    if (ip && ip[0] != '\0' && strcmp(ip, "0.0.0.0") != 0) {
+        snprintf(buf, buf_size, "%s", ip);
         return;
     }
 
@@ -91,11 +93,11 @@ static void getIpAddressStr(char *buf, size_t buf_size)
         s_nifm_tried = true;
     }
 
-    u32 ip = 0;
-    Result rc = nifmGetCurrentIpAddress(&ip);
-    if (R_SUCCEEDED(rc) && ip != 0) {
+    u32 ipaddr = 0;
+    Result rc = nifmGetCurrentIpAddress(&ipaddr);
+    if (R_SUCCEEDED(rc) && ipaddr != 0) {
         struct in_addr addr;
-        addr.s_addr = ip;
+        addr.s_addr = ipaddr;
         snprintf(buf, buf_size, "%s", inet_ntoa(addr));
         return;
     }
