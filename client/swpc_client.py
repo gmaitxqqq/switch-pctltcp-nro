@@ -81,7 +81,9 @@ class SwitchTCPClient:
         """连接到 Switch。成功返回空字符串，失败返回错误描述"""
         self.disconnect()
         try:
-            self._sock = socket.create_connection((host, port), timeout=TIMEOUT_CONNECT)
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.settimeout(TIMEOUT_CONNECT)
+            self._sock.connect((host, port))
             reply = self._send_cmd("PING")
             if "PONG" not in reply:
                 self.disconnect()
@@ -89,7 +91,7 @@ class SwitchTCPClient:
             return ""
         except socket.timeout:
             self._sock = None
-            return "连接超时。Switch 是否运行 pctltcp-nro 且在同一网络？"
+            return f"连接超时（{TIMEOUT_CONNECT}秒）。Switch 是否运行 pctltcp-nro 且在同一网络？"
         except ConnectionRefusedError:
             self._sock = None
             return "连接被拒绝。请检查 pctltcp-nro 是否在 Switch 上运行。"
@@ -102,10 +104,9 @@ class SwitchTCPClient:
         with self._lock:
             if self._sock:
                 try:
-                    self._sock.shutdown(socket.SHUT_RDWR)
+                    self._sock.close()
                 except OSError:
                     pass
-                self._sock.close()
                 self._sock = None
 
     @property

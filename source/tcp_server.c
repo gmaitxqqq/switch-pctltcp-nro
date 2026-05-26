@@ -196,6 +196,9 @@ static void handle_client(int client_fd)
     char line[TCP_MAX_LINE];
     int line_pos = 0;
 
+    /* Send welcome message so PC client knows connection is ready */
+    send_str(client_fd, "HELLO pctltcp-nro " VERSION_S "\n");
+
     while (s_running) {
         struct pollfd pfd;
         pfd.fd = client_fd;
@@ -311,6 +314,8 @@ void tcp_server_stop(void)
     s_running = false;
 
     if (s_server_fd >= 0) {
+        /* shutdown() wakes up poll() in server_thread_func */
+        shutdown(s_server_fd, SHUT_RDWR);
         close(s_server_fd);
         s_server_fd = -1;
     }

@@ -74,13 +74,30 @@ static void waitForKey(void)
 
 // ---- Get Switch IP Address ----
 // nifm must be initialized before calling this
+// Call this every frame — it re-tries nifmGetCurrentIpAddress()
+// if nifm was not initialized yet.
 static void getIpAddressStr(char *buf, size_t buf_size)
 {
     buf[0] = '\0';
 
+    /* If nifm was not initialized at startup, try once now */
+    static bool s_nifm_tried = false;
+    static Result s_nifm_rc = MAKERESULT(Module_Libnx, LibnxError_NotFound);
+
+    if (!s_nifm_tried) {
+        s_nifm_rc = nifmInitialize(NifmServiceType_User);
+        s_nifm_tried = true;
+        if (R_SUCCEEDED(s_nifm_rc))
+            nifm_rc = s_nifm_rc;  /* update global for cleanup */
+    }
+
+    if (R_FAILED(s_nifm_rc)) {
+        snprintf(buf, buf_size, "N/A");
+        return;
+    }
+
     u32 ip = 0;
     Result rc = nifmGetCurrentIpAddress(&ip);
-
     if (R_FAILED(rc)) {
         snprintf(buf, buf_size, "N/A");
         return;
@@ -506,6 +523,11 @@ int main(int argc, char **argv)
         consoleClear();
         printf("\n");
         printSeparator();
+
+        /* Refresh IP every frame (in case network comes up late) */
+        if (R_SUCCEEDED(nifm_rc))
+            getIpAddressStr(ip_str, sizeof(ip_str));
+
         printf("   Switch Parental Control TCP\n");
         printf("   %s | %s:%d | Clients: %u\n",
                VERSION_S, ip_str, TCP_PORT, tcp_server_client_count());
