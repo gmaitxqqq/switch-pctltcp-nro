@@ -160,10 +160,15 @@ Result pctl_get_settings(PlayTimerSettings *settings)
 
     /* GetPlayTimerSettings (cmd 145601):
      * Output: u16[34] via HIPC pointer buffer.
-     * Based on v11.5 line 178:
-     *   serviceDispatchOut(srv, 145601, c)
-     * where c is u16[34]. Pass array name directly. */
-    return serviceDispatchOut(&s_pctlSrv, 145601, settings);
+     * Based on v11.5 line 178: serviceDispatchOut(srv, 145601, c)
+     * where c is u16[34]. Must use u16 array, not PlayTimerSettings*. */
+    u16 c[34];
+    memset(c, 0, sizeof(c));
+    rc = serviceDispatchOut(&s_pctlSrv, 145601, c);
+    if (R_SUCCEEDED(rc)) {
+        memcpy(settings, c, sizeof(c));
+    }
+    return rc;
 }
 
 Result pctl_set_settings(const PlayTimerSettings *settings)
