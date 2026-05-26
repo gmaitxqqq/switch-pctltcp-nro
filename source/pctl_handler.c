@@ -140,6 +140,8 @@ Result pctl_get_remaining_time(u64 *remaining_ns)
     Result rc = pctl_reinit();
     if (R_FAILED(rc)) return rc;
 
+    /* serviceDispatchOut: 2nd arg is out var (by pointer), 
+     * the macro fills *remaining_ns from IPC response */
     return serviceDispatchOut(&s_pctlSrv, 1454, *remaining_ns);
 }
 
@@ -184,9 +186,12 @@ Result pctl_set_settings(const PlayTimerSettings *settings)
     Result rc = pctl_reinit();
     if (R_FAILED(rc)) return rc;
 
-    /* SetPlayTimerSettingsForDebug (cmd 195101):
-     * Input: u16[34] via HIPC pointer buffer */
-    return serviceDispatchIn(&s_pctlSrv, 195101, *settings,
+    /* SetPlayTimerSettingsForDebug (cmd 1951):
+     * Input: u16[34] via HIPC pointer buffer.
+     * NOTE: Previously this was incorrectly written as 195101,
+     * which is not a valid IPC command ID and caused
+     * pctl 0xf601 errors on all write operations (SET, RESET). */
+    return serviceDispatchIn(&s_pctlSrv, 1951, *settings,
         .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_In },
         .buffers = { { settings, sizeof(PlayTimerSettings) } }
     );
