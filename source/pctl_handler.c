@@ -1,35 +1,27 @@
 /**
  * pctl_handler.c - Nintendo Switch PCTL service IPC wrapper
  *
- * Communicates with the pctl system service using libnx's
- * pctlInitialize() + serviceDispatch*() API.
+ * Based on switch-parental-timer v11.5 source/main.c
+ * (which successfully calls pctl IPC on .nro context).
  *
- * COMPATIBILITY NOTE (sysmodule vs .nro):
- *   libnx pctlInitialize() tries: pctl:a -> pctl:s -> pctl:r -> pctl
- *   - In .nro (user-mode): pctl:a succeeds, all commands work.
- *   - In sysmodule: pctl:a is likely denied; pctl:s should succeed.
- *     Read-only commands (GET, STATUS, REMAINING) should work on pctl:s.
- *     Write commands (SET, SET_DAY, RESET) use cmd 195101 which may
- *     require pctl:a. If it fails, the TCP client gets an ERR response.
- *
- * IPC command IDs (from SwitchBrew / NX-Pctl-Manager):
- *   1451: StartPlayTimer
- *   1452: StopPlayTimer
- *   1453: IsPlayTimerEnabled
- *   1454: GetPlayTimerRemainingTime
- *   1455: IsRestrictedByPlayTimer
- *   145601: GetPlayTimerSettings [18.0.0+]
- *   195101: SetPlayTimerSettingsForDebug [18.0.0+]
+ * IPC command IDs (verified working on fw 22.1.0):
+ *   1451:   StartPlayTimer
+ *   1452:   StopPlayTimer
+ *   1453:   IsPlayTimerEnabled          (out: bool, inline)
+ *   1454:   GetPlayTimerRemainingTime  (out: u64, inline)
+ *   1455:   IsRestrictedByPlayTimer   (out: bool, inline)
+ *   145601: GetPlayTimerSettings       (out: u16[34], pointer buffer)
+ *   195101: SetPlayTimerSettingsForDebug (in:  u16[34], pointer buffer)
  *
  * PlayTimerSettings layout: u16[34] (0x44 bytes)
- *   [0]     header magic  (0x0101 when days are set)
- *   [1]     header flag   (0x0001 when enabled)
- *   [2-6]   reserved      (zero)
- *   Day n (Sun=0..Sat=6):
- *     [7+4n+0]  day flag    (0x0600 = configured)
- *     [7+4n+1]  day enable  (0x0100 = restricted, 0x0000 = skip)
- *     [7+4n+2]  day minutes (0=blocked, 1-1440=limit, 0xFFFF=unlimited)
- *     [7+4n+3]  day padding (zero)
+ *   [0]      header magic  (0x0101 when days are set)
+ *   [1]      header flag   (0x0001 when enabled)
+ *   [2-6]    reserved      (zero)
+ *   Day n (Sun=0 .. Sat=6):
+ *     [7+4n+0]  day flag     (0x0600 = configured)
+ *     [7+4n+1]  day enable   (0x0100 = restricted, 0x0000 = skip)
+ *     [7+4n+2]  day minutes  (0=blocked, 1-1440=limit, 0xFFFF=unlimited)
+ *     [7+4n+3]  day padding  (zero)
  */
 
 #include "pctl_handler.h"
@@ -51,20 +43,10 @@ Result pctl_init(void)
     if (s_initialized)
         return 0;
 
-    /* Use libnx's pctlInitialize() which handles:
-     * - Opening pctl:a (or pctl:s / pctl:r fallbacks)
-     * - Creating the IParentalControlService session
-     * - Converting to domain
-     * NOTE: In sysmodule context this may fail or even crash.
-     * The caller must handle failure gracefully. */
     rc = pctlInitialize();
     if (R_FAILED(rc))
         return rc;
 
-    /* Get the service session for direct IPC calls.
-     * SAFETY CHECK: pctlGetServiceSession_Service() can return NULL
-     * in sysmodule context if the internal state wasn't set up.
-     * Accessing a NULL pointer causes Error 2345-0002 (NULL dereference). */
     Service *srv = pctlGetServiceSession_Service();
     if (srv == NULL) {
         pctlExit();
@@ -94,6 +76,7 @@ bool pctl_is_initialized(void)
 
 /* ------------------------------------------------------------------ */
 /* Re-initialize pctl session (needed between certain calls)           */
+/* Based on switch-parental-timer v11.5 pctl_ops_reinit()          */
 /* ------------------------------------------------------------------ */
 static Result pctl_reinit(void)
 {
@@ -140,10 +123,6 @@ Result pctl_get_remaining_time(u64 *remaining_ns)
     Result rc = pctl_reinit();
     if (R_FAILED(rc)) return rc;
 
-    /* GetPlayTimerRemainingTime (cmd 1454):
-     * Out: u64 (inline out param).
-     * serviceDispatchOut 3rd arg is an l-value (variable), 
-     * NOT a dereferenced pointer. Use a local tmp. */
     u64 tmp = 0;
     rc = serviceDispatchOut(&s_pctlSrv, 1454, tmp);
     if (R_SUCCEEDED(rc))
@@ -166,7 +145,9 @@ Result pctl_is_restricted(bool *restricted)
 }
 
 /* ------------------------------------------------------------------ */
-/* Settings read/write using HIPC pointer buffers                      */
+/* Settings read/write                                                  */
+/* Based on switch-parental-timer v11.5 pctl_play_timer_query()    */
+/* and pctl_play_timer_set_days()                                      */
 /* ------------------------------------------------------------------ */
 
 Result pctl_get_settings(PlayTimerSettings *settings)
@@ -179,11 +160,10 @@ Result pctl_get_settings(PlayTimerSettings *settings)
 
     /* GetPlayTimerSettings (cmd 145601):
      * Output: u16[34] via HIPC pointer buffer.
-     * No inline out params — use serviceDispatch() with .buffers[0]. */
-    return serviceDispatch(&s_pctlSrv, 145601,
-        .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_Out },
-        .buffers = { { settings, sizeof(PlayTimerSettings) } }
-    );
+     * Based on v11.5 line 178:
+     *   serviceDispatchOut(srv, 145601, c)
+     * where c is u16[34]. Pass array name directly. */
+    return serviceDispatchOut(&s_pctlSrv, 145601, settings);
 }
 
 Result pctl_set_settings(const PlayTimerSettings *settings)
@@ -195,12 +175,12 @@ Result pctl_set_settings(const PlayTimerSettings *settings)
 
     /* SetPlayTimerSettingsForDebug (cmd 195101):
      * Input: u16[34] via HIPC pointer buffer.
-     * NOTE: cmd ID is 195101 (not 1951). Verified working in
-     * switch-parental-timer v11.5 (source/main.c line 204).
-     * Use serviceDispatch() (no inline params) with .buffers[]. */
-    return serviceDispatch(&s_pctlSrv, 195101,
+     * Based on v11.5 line 204:
+     *   serviceDispatchIn(pctlGetServiceSession_Service(), 195101, c)
+     * where c is u16[34]. Pass array name directly. */
+    return serviceDispatchIn(&s_pctlSrv, 195101, settings,
         .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_In },
-        .buffers = { { settings, sizeof(PlayTimerSettings) } }
+        .buffers      = { { settings, sizeof(PlayTimerSettings) } }
     );
 }
 
