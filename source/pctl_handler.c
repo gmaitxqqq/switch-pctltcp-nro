@@ -172,8 +172,11 @@ Result pctl_get_settings(PlayTimerSettings *settings)
     if (R_FAILED(rc)) return rc;
 
     /* GetPlayTimerSettings (cmd 145601):
-     * Output: u16[34] via HIPC pointer buffer */
-    return serviceDispatchOut(&s_pctlSrv, 145601, *settings,
+     * Output: u16[34] via HIPC pointer buffer.
+     * NOTE: serviceDispatchOut's 3rd arg is for inline out params (raw IPC words).
+     * For pointer-buffer-only output, pass 0 as the out arg and put the
+     * buffer in .buffers[0]. */
+    return serviceDispatchOut(&s_pctlSrv, 145601, 0,
         .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_Out },
         .buffers = { { settings, sizeof(PlayTimerSettings) } }
     );
@@ -188,10 +191,11 @@ Result pctl_set_settings(const PlayTimerSettings *settings)
 
     /* SetPlayTimerSettingsForDebug (cmd 1951):
      * Input: u16[34] via HIPC pointer buffer.
-     * NOTE: Previously this was incorrectly written as 195101,
-     * which is not a valid IPC command ID and caused
-     * pctl 0xf601 errors on all write operations (SET, RESET). */
-    return serviceDispatchIn(&s_pctlSrv, 1951, *settings,
+     * NOTE: serviceDispatchIn's 3rd arg is for inline input params (raw IPC words).
+     * For pointer-buffer-only input, pass 0 as the inline arg and put the
+     * buffer in .buffers[0]. Previously, *settings was incorrectly passed as
+     * the inline arg, causing IPC parameter errors (0xf601). */
+    return serviceDispatchIn(&s_pctlSrv, 1951, 0,
         .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_In },
         .buffers = { { settings, sizeof(PlayTimerSettings) } }
     );
