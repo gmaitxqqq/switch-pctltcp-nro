@@ -72,13 +72,19 @@ static void waitForKey(void)
     }
 }
 
-// ---- Get Switch IP Address ----
-// Tries multiple methods: nifm -> gethostid() -> fallback
+// ---- Get Switch IP Address ---
+// Uses tcp_server_get_ip() (which calls getsockname())
+// Fallback to nifm if tcp server not yet started.
 static void getIpAddressStr(char *buf, size_t buf_size)
 {
     buf[0] = '\0';
 
-    /* Method 1: nifm (most reliable when connected) */
+    /* Method 1: tcp_server_get_ip() — most reliable (getsockname) */
+    if (tcp_server_get_ip(buf, buf_size) && buf[0] != '\0') {
+        return;
+    }
+
+    /* Method 2: nifm (may fail in .nro context) */
     static bool s_nifm_tried = false;
     if (!s_nifm_tried) {
         nifmInitialize(NifmServiceType_User);
@@ -92,18 +98,6 @@ static void getIpAddressStr(char *buf, size_t buf_size)
         addr.s_addr = ip;
         snprintf(buf, buf_size, "%s", inet_ntoa(addr));
         return;
-    }
-
-    /* Method 2: gethostid() — returns local IP in network byte order */
-    long hostid = gethostid();
-    if (hostid != 0 && hostid != -1) {
-        struct in_addr addr;
-        addr.s_addr = (u32)hostid;
-        /* Sanity check: not loopback */
-        if ((addr.s_addr & 0xFF) != 127) {
-            snprintf(buf, buf_size, "%s", inet_ntoa(addr));
-            return;
-        }
     }
 
     snprintf(buf, buf_size, "N/A");
