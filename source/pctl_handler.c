@@ -193,12 +193,12 @@ Result pctl_set_settings(const PlayTimerSettings *settings)
     Result rc = pctl_reinit();
     if (R_FAILED(rc)) return rc;
 
-    /* SetPlayTimerSettingsForDebug (cmd 1951):
+    /* SetPlayTimerSettingsForDebug (cmd 195101):
      * Input: u16[34] via HIPC pointer buffer.
-     * NOTE: Previously used serviceDispatchIn() with *settings as inline arg,
-     * which is wrong — *settings is the pointer-buffer data, not an inline
-     * IPC word. Use serviceDispatch() (no inline params) with .buffers[]. */
-    return serviceDispatch(&s_pctlSrv, 1951,
+     * NOTE: cmd ID is 195101 (not 1951). Verified working in
+     * switch-parental-timer v11.5 (source/main.c line 204).
+     * Use serviceDispatch() (no inline params) with .buffers[]. */
+    return serviceDispatch(&s_pctlSrv, 195101,
         .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_In },
         .buffers = { { settings, sizeof(PlayTimerSettings) } }
     );
