@@ -437,7 +437,7 @@ int main(int argc, char **argv)
     printSeparator();
     printf("   Switch Parental Control\n");
     printf("   TCP Server - NRO Edition\n");
-    printf("   %s\n", VERSION_S);
+    printf("   nro-1.3\n");
     printSeparator();
     printf("\n");
     printf("   Initializing...\n");
@@ -543,8 +543,8 @@ int main(int argc, char **argv)
         }
 
         printf("   Switch Parental Control TCP\n");
-        printf("   %s | %s:%d | Clients: %u\n",
-               VERSION_S, ip_str, TCP_PORT, tcp_server_client_count());
+        printf("   nro-1.3 | %s:%d | Clients: %u\n",
+               ip_str, TCP_PORT, tcp_server_client_count());
         printSeparator();
         printf("\n");
 

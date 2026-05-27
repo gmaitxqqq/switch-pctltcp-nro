@@ -159,12 +159,15 @@ Result pctl_get_settings(PlayTimerSettings *settings)
     if (R_FAILED(rc)) return rc;
 
     /* GetPlayTimerSettings (cmd 145601):
-     * Output: u16[34] via HIPC pointer buffer.
+     * Output: u16[34] as inline parameter.
      * Based on v11.5 line 178: serviceDispatchOut(srv, 145601, c)
-     * where c is u16[34]. Must use u16 array, not PlayTimerSettings*. */
+     * where c is u16[34]. Pure inline, NO buffer_attrs/buffers! */
     u16 c[34];
     memset(c, 0, sizeof(c));
-    rc = serviceDispatchOut(&s_pctlSrv, 145601, c);
+
+    Service *srv = pctlGetServiceSession_Service();
+    if (!srv) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
+    rc = serviceDispatchOut(srv, 145601, c);
     if (R_SUCCEEDED(rc)) {
         memcpy(settings, c, sizeof(c));
     }
@@ -179,17 +182,16 @@ Result pctl_set_settings(const PlayTimerSettings *settings)
     if (R_FAILED(rc)) return rc;
 
     /* SetPlayTimerSettingsForDebug (cmd 195101):
-     * Input: u16[34] via HIPC pointer buffer.
+     * Input: u16[34] as inline parameter.
      * Based on v11.5 line 204:
      *   serviceDispatchIn(pctlGetServiceSession_Service(), 195101, c)
-     * where c is u16[34]. Must use local u16 array. */
+     * where c is u16[34]. Pure inline, NO buffer_attrs/buffers! */
     u16 c[34];
     memcpy(c, settings->raw, sizeof(c));
 
-    return serviceDispatchIn(&s_pctlSrv, 195101, c,
-        .buffer_attrs = { SfBufferAttr_HipcPointer | SfBufferAttr_In },
-        .buffers      = { { c, sizeof(c) } }
-    );
+    Service *srv = pctlGetServiceSession_Service();
+    if (!srv) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
+    return serviceDispatchIn(srv, 195101, c);
 }
 
 /* ------------------------------------------------------------------ */
