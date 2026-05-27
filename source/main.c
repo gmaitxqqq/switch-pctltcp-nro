@@ -437,7 +437,7 @@ int main(int argc, char **argv)
     printSeparator();
     printf("   Switch Parental Control\n");
     printf("   TCP Server - NRO Edition\n");
-    printf("   nro-1.4\n");
+    printf("   v" VERSION_S " | by gmaitxqqq\n");
     printSeparator();
     printf("\n");
     printf("   Initializing...\n");
@@ -516,15 +516,11 @@ int main(int argc, char **argv)
     consoleFlush();
     svcSleepThread(1500000000ULL);  // 1.5 sec splash
 
-    // Main menu
+    // Main menu (v1.5.0: settings moved to PC client)
     int cursor = 0;
-    const int menu_count = 6;
+    const int menu_count = 2;
     const char *menu_items[] = {
         "View Status",
-        "Set Weekly Play Time (per day)",
-        "Set Uniform Daily Time",
-        "Clear Play Time Limits",
-        "Unlock Temporarily",
         "Exit",
     };
 
@@ -543,7 +539,7 @@ int main(int argc, char **argv)
         }
 
         printf("   Switch Parental Control TCP\n");
-        printf("   nro-1.4 | %s:%d | Clients: %u\n",
+        printf("   v" VERSION_S " | %s:%d | Clients: %u\n",
                ip_str, TCP_PORT, tcp_server_client_count());
         printSeparator();
         printf("\n");
@@ -567,18 +563,13 @@ int main(int argc, char **argv)
         if (k & HidNpadButton_B) break;
 
         if (k & HidNpadButton_A) {
-            if (R_FAILED(pctl_rc) && cursor != 0) {
-                // Only status and exit work without pctl
+            if (R_FAILED(pctl_rc) && cursor != 0 && cursor != 1) {
                 continue;
             }
 
             switch (cursor) {
                 case 0: showStatus(); break;
-                case 1: menuSetWeeklyPlayTime(); break;
-                case 2: menuSetUniformTimer(); break;
-                case 3: menuClearPlayTimer(); break;
-                case 4: menuUnlockTemporarily(); break;
-                case 5: goto done;
+                case 1: goto done;
             }
         }
 
