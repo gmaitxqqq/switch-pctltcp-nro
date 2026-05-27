@@ -26,6 +26,7 @@
 
 #include "pctl_handler.h"
 #include <string.h>
+#include <time.h>
 
 /* ------------------------------------------------------------------ */
 /* Global state                                                        */
@@ -279,9 +280,27 @@ Result pctl_set_daily_limit_minutes(u32 minutes)
     return pctl_set_settings(&settings);
 }
 
+/**
+ * Get today's day-of-week in Switch convention: 0=Sun, 1=Mon, ..., 6=Sat.
+ * Falls back to 0 (Sun) on error.
+ */
+static int get_today_switch_day(void)
+{
+    time_t t = time(NULL);
+    if (t == (time_t)-1)
+        return 0;
+    struct tm *tm_info = localtime(&t);
+    if (!tm_info)
+        return 0;
+    /* tm_wday: 0=Sun, 1=Mon, ..., 6=Sat — same as Switch day convention */
+    return tm_info->tm_wday;
+}
+
 Result pctl_get_daily_limit_minutes(u32 *minutes)
 {
-    return pctl_get_day_limit_minutes(0, minutes);
+    /* Read today's limit, not a hardcoded day=0 (Sun) */
+    int today = get_today_switch_day();
+    return pctl_get_day_limit_minutes(today, minutes);
 }
 
 Result pctl_reset_play_time(void)

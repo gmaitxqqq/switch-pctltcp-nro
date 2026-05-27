@@ -17,7 +17,7 @@
 #define TCP_PORT           6000
 #define TCP_BUFFER_SIZE    512
 #define TCP_MAX_LINE       256
-#define VERSION_S          "nro-1.2"
+#define VERSION_S          "nro-1.4"
 
 /** Start the TCP server and launch the accept thread. Returns 0 on success. */
 Result tcp_server_start(void);
