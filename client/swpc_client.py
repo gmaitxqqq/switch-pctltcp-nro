@@ -18,7 +18,7 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-VERSION = "1.3.4"
+VERSION = "1.3.6"
 
 # ---------------------------------------------------------------------------
 # 协议常量
@@ -560,27 +560,30 @@ class SWPCApp:
 
     def _display_status(self, status: SwitchStatus):
         """用实时数据更新状态面板"""
-        self.status_tree.set(
-            self._status_items["timer_state"],
-            value="运行中（正在计时）" if status.enabled else "已暂停",
-        )
-        self.status_tree.set(
-            self._status_items["daily_limit"],
-            value=f"{status.daily_limit_minutes} 分钟" if status.daily_limit_minutes > 0 else "不限",
-        )
-        self.status_tree.set(
-            self._status_items["remaining"],
-            value=f"{status.remaining_minutes} 分钟",
-        )
-        self.status_tree.set(
-            self._status_items["restricted"],
-            value="是（时间到，已锁屏）" if status.restricted else "否（可以继续玩）",
-        )
+        try:
+            self.status_tree.set(
+                self._status_items["timer_state"], "value",
+                "运行中（正在计时）" if status.enabled else "已暂停",
+            )
+            self.status_tree.set(
+                self._status_items["daily_limit"], "value",
+                f"{status.daily_limit_minutes} 分钟" if status.daily_limit_minutes > 0 else "不限",
+            )
+            self.status_tree.set(
+                self._status_items["remaining"], "value",
+                f"{status.remaining_minutes} 分钟",
+            )
+            self.status_tree.set(
+                self._status_items["restricted"], "value",
+                "是（时间到，已锁屏）" if status.restricted else "否（可以继续玩）",
+            )
+        except Exception as e:
+            self._log(f"[DEBUG] _display_status error: {e}")
 
     def _clear_status(self):
         """清空所有状态字段"""
         for iid in self._status_items.values():
-            self.status_tree.set(iid, value="---")
+            self.status_tree.set(iid, "value", "---")
 
     def _check_connected(self) -> bool:
         if not self.client.is_connected:
