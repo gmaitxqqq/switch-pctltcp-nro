@@ -88,29 +88,31 @@ static Result pctl_reinit(void)
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * pctl_start_play_timer / pctl_stop_play_timer:
+ *   Do NOT call pctl_reinit() — reinit would reset the pctl
+ *   service state and the timer would not actually start/stop.
+ *   Based on v11.5: it never reinit() for read/control commands.
+ */
 Result pctl_start_play_timer(void)
 {
-    Result rc = pctl_reinit();
-    if (R_FAILED(rc)) return rc;
+    if (!s_initialized) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
     return serviceDispatch(&s_pctlSrv, 1451);
 }
 
 Result pctl_stop_play_timer(void)
 {
-    Result rc = pctl_reinit();
-    if (R_FAILED(rc)) return rc;
+    if (!s_initialized) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
     return serviceDispatch(&s_pctlSrv, 1452);
 }
 
 Result pctl_is_enabled(bool *enabled)
 {
     if (!enabled) return MAKERESULT(Module_Libnx, LibnxError_BadInput);
-
-    Result rc = pctl_reinit();
-    if (R_FAILED(rc)) return rc;
+    if (!s_initialized) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
 
     u8 tmp = 0;
-    rc = serviceDispatchOut(&s_pctlSrv, 1453, tmp);
+    Result rc = serviceDispatchOut(&s_pctlSrv, 1453, tmp);
     if (R_SUCCEEDED(rc))
         *enabled = (tmp != 0);
     return rc;
@@ -119,12 +121,10 @@ Result pctl_is_enabled(bool *enabled)
 Result pctl_get_remaining_time(u64 *remaining_ns)
 {
     if (!remaining_ns) return MAKERESULT(Module_Libnx, LibnxError_BadInput);
-
-    Result rc = pctl_reinit();
-    if (R_FAILED(rc)) return rc;
+    if (!s_initialized) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
 
     u64 tmp = 0;
-    rc = serviceDispatchOut(&s_pctlSrv, 1454, tmp);
+    Result rc = serviceDispatchOut(&s_pctlSrv, 1454, tmp);
     if (R_SUCCEEDED(rc))
         *remaining_ns = tmp;
     return rc;
@@ -133,12 +133,10 @@ Result pctl_get_remaining_time(u64 *remaining_ns)
 Result pctl_is_restricted(bool *restricted)
 {
     if (!restricted) return MAKERESULT(Module_Libnx, LibnxError_BadInput);
-
-    Result rc = pctl_reinit();
-    if (R_FAILED(rc)) return rc;
+    if (!s_initialized) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
 
     u8 tmp = 0;
-    rc = serviceDispatchOut(&s_pctlSrv, 1455, tmp);
+    Result rc = serviceDispatchOut(&s_pctlSrv, 1455, tmp);
     if (R_SUCCEEDED(rc))
         *restricted = (tmp != 0);
     return rc;
@@ -155,19 +153,19 @@ Result pctl_get_settings(PlayTimerSettings *settings)
     if (!settings) return MAKERESULT(Module_Libnx, LibnxError_BadInput);
     memset(settings, 0, sizeof(*settings));
 
-    Result rc = pctl_reinit();
-    if (R_FAILED(rc)) return rc;
+    if (!s_initialized) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
 
     /* GetPlayTimerSettings (cmd 145601):
      * Output: u16[34] as inline parameter.
      * Based on v11.5 line 178: serviceDispatchOut(srv, 145601, c)
-     * where c is u16[34]. Pure inline, NO buffer_attrs/buffers! */
+     * where c is u16[34]. Pure inline, NO buffer_attrs/buffers!
+     * Do NOT reinit() — v11.5 never does this for read commands. */
     u16 c[34];
     memset(c, 0, sizeof(c));
 
     Service *srv = pctlGetServiceSession_Service();
     if (!srv) return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
-    rc = serviceDispatchOut(srv, 145601, c);
+    Result rc = serviceDispatchOut(srv, 145601, c);
     if (R_SUCCEEDED(rc)) {
         memcpy(settings, c, sizeof(c));
     }
