@@ -307,15 +307,23 @@ Result pctl_reset_play_time(void)
 {
     Result rc;
 
+    /* Step 1: Stop the play timer */
     rc = pctl_stop_play_timer();
     if (R_FAILED(rc)) return rc;
 
+    /* Step 2: Get current settings */
     PlayTimerSettings settings;
     rc = pctl_get_settings(&settings);
     if (R_FAILED(rc)) return rc;
 
+    /* Step 3: Re-apply the same settings — this resets the internal
+     * play time counter for today, restoring remaining time to the limit */
     rc = pctl_set_settings(&settings);
     if (R_FAILED(rc)) return rc;
 
-    return pctl_start_play_timer();
+    /* Step 4: Restart the play timer */
+    rc = pctl_start_play_timer();
+    if (R_FAILED(rc)) return rc;
+
+    return 0;
 }
