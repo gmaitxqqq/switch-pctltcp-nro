@@ -402,7 +402,9 @@ class SWPCApp:
         except Exception as e:
             err = f"异常: {type(e).__name__}: {e}"
             try:
-                with open(r"C:\Users\HaiXin_LK7\Desktop\connect_detail.log", "a", encoding="utf-8") as f:
+                import tempfile, os
+                log_path = os.path.join(tempfile.gettempdir(), "swpc_connect.log")
+                with open(log_path, "a", encoding="utf-8") as f:
                     f.write(time.strftime("%H:%M:%S ") + err + "\n")
                     f.write(traceback.format_exc() + "\n")
             except Exception:
