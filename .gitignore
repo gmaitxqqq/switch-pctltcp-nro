@@ -1,6 +1,25 @@
+# Build output
 build/
-*.nro
 *.elf
+*.nro
 *.nacp
+*.nso
+*.nsp
+*.npdm
+*.map
 *.nrr
-.pptlc
+
+# Archives
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python cache
+__pycache__/
+*.pyc
